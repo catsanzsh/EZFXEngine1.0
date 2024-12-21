@@ -2,88 +2,68 @@ import pygame
 import sys
 import math
 from enum import Enum
-from ursina import Ursina, Entity, camera, held_keys, window, color, application, time, curve
-
-
-# ------------------------ CORE ENGINE COMPONENTS ------------------------
-
-class FTRender:
-    """Placeholder for an advanced renderer... but for now, it's just here to make things look cool."""
-    def __init__(self, width, height):
-        self.width = width
-        self.height = height
-
-    def render(self, surface):
-        """Render method without doing anything at the moment, because sometimes less is more."""
-        pass  # Rendering... but not yet
-
+from ursina import *
+from ursina.prefabs.first_person_controller import FirstPersonController
 
 class MenuState(Enum):
-    """This enum controls the various states of our mystical menu. It's simple, yet powerful."""
-    MAIN = "main"  # Main menu, where everything begins
-    CREDITS = "credits"  # Where we thank the people who made this thing happen
-    PLAYING = "playing"  # The game is on, folks!
-
+    MAIN = "main"
+    CREDITS = "credits"
+    PLAYING = "playing"
 
 class MenuItem:
-    """Represents a menu item, ready to be clicked or hovered over. Oh, the drama of selection."""
     def __init__(self, text, position, action, font_size=36):
         self.text = text
         self.position = position
         self.action = action
         self.font = pygame.font.Font(None, font_size)
         self.is_selected = False
-        self.hover_offset = 0  # Hover animation to make it extra jazzy
+        self.hover_offset = 0
 
     def draw(self, surface):
-        """Draw the menu item with a glowing effect if it's selected. Like magic, but with pixels."""
-        color = (255, 255, 0) if self.is_selected else (255, 255, 255)  # Yellow for selected, white for normal
+        color = (255, 0, 0) if self.is_selected else (255, 255, 255)
         text_surface = self.font.render(self.text, True, color)
-        pos = (self.position[0], self.position[1] + self.hover_offset)  # Hover effect adds a little flair
+        pos = (self.position[0], self.position[1] + self.hover_offset)
         surface.blit(text_surface, pos)
 
     def update(self):
-        """Animate the menu item. It's like a dance—hovering in a rhythmic motion."""
+        # Make the selected item "hover" a little
         self.hover_offset = -5 * abs(math.sin(pygame.time.get_ticks() * 0.003)) if self.is_selected else 0
 
-
 class MenuSystem:
-    """The all-powerful system that controls the game's menus. Where the magic of navigation happens."""
     def __init__(self, screen_width, screen_height):
         self.screen_width = screen_width
         self.screen_height = screen_height
-        self.state = MenuState.MAIN  # Starting in the main menu, naturally
+        self.state = MenuState.MAIN
         self.selected_index = 0
-        self.last_input_time = 0  # Don't let the player spam too much, time is precious!
+        self.last_input_time = 0
 
-        # Menu items—each one is a chance for the player to pick their fate
         self.menu_items = [
-            MenuItem("Start Game", (screen_width // 2 - 80, screen_height // 2 - 60),
+            MenuItem("Start Super Mario FX", (screen_width // 2 - 100, screen_height // 2 - 60),
                      lambda: setattr(self, 'state', MenuState.PLAYING)),
             MenuItem("Credits", (screen_width // 2 - 60, screen_height // 2),
                      lambda: setattr(self, 'state', MenuState.CREDITS)),
             MenuItem("Exit", (screen_width // 2 - 40, screen_height // 2 + 60),
-                     lambda: sys.exit())  # When you're done, you're DONE
+                     lambda: sys.exit())
         ]
 
-        # Title font—because a game like this deserves a title that stands tall
         self.title_font = pygame.font.Font(None, 72)
 
     def update(self):
-        """Update the menu state based on user input. Let the keys guide you."""
         current_time = pygame.time.get_ticks()
-        if current_time - self.last_input_time < 200:  # Limit input speed to avoid menu spamming
+        if current_time - self.last_input_time < 200:
             return
 
-        keys = pygame.key.get_pressed()  # What keys is the player holding? We need to know.
+        keys = pygame.key.get_pressed()
+
+        # Reset selections
         for item in self.menu_items:
-            item.is_selected = False  # Deselect all items
-        self.menu_items[self.selected_index].is_selected = True  # The selected item gets special treatment
-        
-        # Handle navigation—it's like a dance, up and down, selecting with grace
+            item.is_selected = False
+        self.menu_items[self.selected_index].is_selected = True
+
+        # Menu navigation
         if keys[pygame.K_UP]:
             self.selected_index = (self.selected_index - 1) % len(self.menu_items)
-            self.last_input_time = current_time  # Keep track of when we last input something
+            self.last_input_time = current_time
         elif keys[pygame.K_DOWN]:
             self.selected_index = (self.selected_index + 1) % len(self.menu_items)
             self.last_input_time = current_time
@@ -91,124 +71,305 @@ class MenuSystem:
             self.menu_items[self.selected_index].action()
             self.last_input_time = current_time
 
+        # Update each menu item
         for item in self.menu_items:
-            item.update()  # Update the hover animations
+            item.update()
 
     def draw(self, screen):
-        """Render the menu to the screen, in all its pixelated glory."""
-        screen.fill((0, 0, 40))  # Dark blue background, because we're cool like that
-        title_text = self.title_font.render("Super Mario FX Beta", True, (255, 255, 255))
+        screen.fill((0, 0, 0))
+        title_text = self.title_font.render("Super Mario FX 1.0", True, (255, 0, 0))
         screen.blit(title_text, (self.screen_width // 2 - title_text.get_width() // 2, 100))
 
         for item in self.menu_items:
-            item.draw(screen)  # Draw each menu item
+            item.draw(screen)
 
+#
+#   --- Bob-omb Battlefield–like environment setup ---
+#
 
-# ------------------------ GAMEPLAY AND URSINA ------------------------
+def create_bobomb(position=(0,1,0)):
+    """Create a roaming Bob-omb-like entity."""
+    bobomb = Entity(
+        model='sphere',
+        color=color.black,
+        scale=1.2,
+        position=position,
+        collider='sphere'
+    )
+    # Give it eyes (just a decorative second entity)
+    Entity(
+        parent=bobomb,
+        model='sphere',
+        color=color.white,
+        scale=0.2,
+        position=(0.2, 0.1, 0.9)
+    )
+    Entity(
+        parent=bobomb,
+        model='sphere',
+        color=color.white,
+        scale=0.2,
+        position=(-0.2, 0.1, 0.9)
+    )
+    return bobomb
 
-def run_ursina_game():
-    """Run the 3D Ursina gameplay. A whole new world of polygons awaits."""
-    print("Starting game engine Ninnt 1.0... Wait, what's Ninnt? Is it real? Find out in the game.")
-    app = Ursina(borderless=False)
-    window.title = "Super Mario FX Beta - 3D Gameplay"
+def create_king_bobomb(position=(0,5,0)):
+    """Create a large King Bob-omb at the top of the ‘mountain’."""
+    king = Entity(
+        model='sphere',
+        color=color.black,
+        scale=3,
+        position=position,
+        collider='sphere'
+    )
+    # A simple 'crown'
+    Entity(
+        parent=king,
+        model='cube',
+        color=color.gold,
+        scale=(1.2, 0.3, 1.2),
+        position=(0, 1.7, 0)
+    )
+    # Some eyes
+    Entity(
+        parent=king,
+        model='sphere',
+        color=color.white,
+        scale=0.5,
+        position=(0.5, 0.5, 1)
+    )
+    Entity(
+        parent=king,
+        model='sphere',
+        color=color.white,
+        scale=0.5,
+        position=(-0.5, 0.5, 1)
+    )
+    return king
+
+def create_hilly_terrain():
+    """Create multiple ‘hills’ or angled planes for a Bob-omb Battlefield feel."""
+    # Large base plane
+    base = Entity(
+        model='plane',
+        scale=(120, 1, 120),
+        color=color.lime.tint(-.1),
+        texture='grass',
+        texture_scale=(100,100),
+        collider='mesh'
+    )
+    # A few angled planes that simulate hills or ramps
+    hill1 = Entity(
+        model='plane',
+        scale=(40, 1, 40),
+        rotation=(20, 0, 0),
+        position=(20,1.5,20),
+        color=color.lime.tint(-.15),
+        texture='grass',
+        texture_scale=(20,20),
+        collider='mesh'
+    )
+    hill2 = Entity(
+        model='plane',
+        scale=(40, 1, 40),
+        rotation=(15, 45, 0),
+        position=(-15,2,35),
+        color=color.lime.tint(-.05),
+        texture='grass',
+        texture_scale=(20,20),
+        collider='mesh'
+    )
+    hill3 = Entity(
+        model='plane',
+        scale=(40, 1, 40),
+        rotation=(15, -45, 0),
+        position=(15,2,45),
+        color=color.lime.tint(-.1),
+        texture='grass',
+        texture_scale=(20,20),
+        collider='mesh'
+    )
+    # A ramp that leads to the top
+    ramp = Entity(
+        model='plane',
+        scale=(30, 1, 60),
+        rotation=(25, 0, 0),
+        position=(0,6,60),
+        color=color.lime.tint(-.2),
+        texture='grass',
+        texture_scale=(15,30),
+        collider='mesh'
+    )
+
+    return [base, hill1, hill2, hill3, ramp]
+
+def run_mario_fx():
+    """
+    Updated function to create a Bob-omb Battlefield–like level:
+    - Hilly terrain
+    - Roaming Bob-omb enemies
+    - A King Bob-omb boss at the top
+    """
+    app = Ursina()
+    window.title = 'Super Mario FX 1.0 - Bob-omb Battlefield'
+    window.borderless = False
     window.fullscreen = False
-    window.size = (800, 600)
+    window.exit_button.visible = False
+    window.fps_counter.enabled = True
 
-    ground = Entity(model='plane', scale=32, color=color.gray)  # The ground. Always a good place to start.
-    player = Entity(model='cube', color=color.orange, scale=1, position=(0, 0.5, 0))  # You, the hero.
+    # Create terrain
+    terrain = create_hilly_terrain()
 
-    # Some boxes to spice up the environment. Because who doesn’t love boxes?
-    box1 = Entity(model='cube', color=color.red, scale=1, position=(2, 0.5, 2))
-    box2 = Entity(model='cube', color=color.blue, scale=1, position=(-2, 0.5, -2))
-    box3 = Entity(model='cube', color=color.green, scale=1, position=(2, 0.5, -2))
-    box4 = Entity(model='cube', color=color.yellow, scale=1, position=(-2, 0.5, 2))
+    # Create some coins
+    coins = []
+    for i in range(15):
+        coin = Entity(
+            model='sphere',
+            color=color.yellow,
+            scale=0.5,
+            position=(random.uniform(-30, 30), 2, random.uniform(-30, 90)),
+            collider='sphere'
+        )
+        coins.append(coin)
 
-    camera.position = (0, 10, -15)  # Camera follows you, because that's what good cameras do
-    camera.look_at(player.position)  # Always watching you
-    camera.fov = 90  # Give the player a wide field of view, because they're going places
+    # Spawn several small Bob-ombs around the map
+    bobombs = []
+    for _ in range(5):
+        x = random.uniform(-30, 30)
+        z = random.uniform(0, 60)
+        bobomb = create_bobomb(position=(x, 2, z))
+        bobombs.append(bobomb)
 
+    # King Bob-omb at the “top”
+    king_bobomb = create_king_bobomb(position=(0, 15, 80))
+
+    # Player setup
+    player = FirstPersonController()
+    player.cursor.visible = True
+    player.gravity = 0.8
+    player.jump_height = 4
+    player.jump_duration = 0.3
+    player.position = (0, 2, 0)
+    player.speed = 8
+    player.mouse_sensitivity = Vec2(40, 40)
+
+    score = 0
+    score_text = Text(text=f'Score: {score}', position=(-0.85, 0.45), scale=2)
+
+    # Bob-omb movement
+    def roam_bobomb(bobomb):
+        """Simple random movement logic for bobombs."""
+        bobomb.direction = Vec3(random.uniform(-1,1), 0, random.uniform(-1,1)).normalized() * 0.03
+
+    for b in bobombs:
+        roam_bobomb(b)
+
+    # Attach a function to update them each frame
     def update():
-        speed = 5 * time.dt  # Player speed, scaling with time
-        if held_keys['w']:
-            player.z += speed
-        if held_keys['s']:
-            player.z -= speed
-        if held_keys['a']:
-            player.x -= speed
-        if held_keys['d']:
-            player.x += speed
+        nonlocal score
 
-        # Camera follows the player. Just like the world follows their every move.
-        camera.position = player.position + (0, 10, -15)
-        camera.look_at(player.position)
+        # Coin collection
+        for coin in coins[:]:
+            if distance(player.position, coin.position) < 1.5:
+                destroy(coin)
+                coins.remove(coin)
+                score += 100
+                score_text.text = f'Score: {score}'
 
-        if held_keys['escape']:  # Escape the madness. We all need an escape button.
+        # Respawn if player falls off
+        if player.y < -50:
+            player.position = (0, 2, 0)
+            score = 0
+            score_text.text = f'Score: {score}'
+
+        # Simple bobomb roaming
+        for bob in bobombs:
+            bob.position += bob.direction
+            # Occasionally change direction or if it hits an edge
+            if random.random() < 0.005 or bob.x < -50 or bob.x > 50 or bob.z < -10 or bob.z > 120:
+                roam_bobomb(bob)
+
+            # Simple “damage” effect if close to a bob-omb
+            if distance(player.position, bob.position) < 1.3:
+                # Knock the player back a bit
+                player.position += (player.position - bob.position).normalized() * 1
+                # Optionally reduce score
+                score = max(0, score - 50)
+                score_text.text = f'Score: {score}'
+
+        # King Bob-omb “interaction”
+        if distance(player.position, king_bobomb.position) < 5:
+            # If close to King Bob-omb, you “win” or reset, etc.
+            score_text.text = 'You defeated King Bob-omb!'
+            invoke(setattr, player, 'position', Vec3(0,2,0), delay=2)
+            invoke(setattr, score_text, 'text', f'Score: {score}', delay=2)
+
+        # Quit if ESC is held
+        if held_keys['escape']:
             application.quit()
 
+    Sky()
     app.run()
 
-
-# ------------------------ MAIN GAME CLASS ------------------------
+#
+#   --- Main Game (Menu + loop) ---
+#
 
 class Game:
-    """Main game class. The center of all things—menus, gameplay, and artful destruction."""
     def __init__(self):
-        pygame.init()  # Initialize Pygame, because it's the law
+        pygame.init()
         self.screen_width = 800
         self.screen_height = 600
         self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
-        pygame.display.set_caption("Super Mario FX Beta")
+        pygame.display.set_caption("Super Mario FX 1.0")
         self.clock = pygame.time.Clock()
-        self.running = True  # Run it until the end of time (or until you quit)
-
-        # Components—menu, renderer, the usual suspects
+        self.running = True
         self.menu = MenuSystem(self.screen_width, self.screen_height)
-        self.renderer = FTRender(self.screen_width, self.screen_height)
 
     def run(self):
-        """The main loop. The heart of the game, pulsing with every frame."""
         while self.running:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     self.running = False
 
             if self.menu.state == MenuState.PLAYING:
-                pygame.display.quit()  # Pygame window, time to go
+                # When user selects "Start Super Mario FX", run the 3D game
+                pygame.display.quit()
                 pygame.quit()
-                run_ursina_game()  # Start the Ursina game. It's go time!
-                pygame.init()  # Reinitialize Pygame like a phoenix rising from the ashes
+                run_mario_fx()
+                # When Ursina app ends, re-init pygame for menu
+                pygame.init()
                 self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
-                pygame.display.set_caption("Super Mario FX Beta")
-                self.menu.state = MenuState.MAIN  # Back to the main menu, folks!
+                pygame.display.set_caption("Super Mario FX 1.0")
+                self.menu.state = MenuState.MAIN
 
             if self.menu.state == MenuState.MAIN:
                 self.menu.update()
                 self.menu.draw(self.screen)
-                self.renderer.render(self.screen)
 
             elif self.menu.state == MenuState.CREDITS:
-                # Credits screen. A moment of glory for the creators.
-                self.screen.fill((0, 0, 0))  # Black background for a dramatic effect
+                self.screen.fill((0, 0, 0))
                 credits_font = pygame.font.Font(None, 48)
-                credits_text = credits_font.render("Credits: Made by Gemini", True, (255, 255, 255))
-                self.screen.blit(credits_text, (self.screen_width // 2 - credits_text.get_width() // 2,
-                                                 self.screen_height // 2 - 20))
+                credits_text = credits_font.render("Super Mario FX 1.0", True, (255, 0, 0))
+                credit_line2 = credits_font.render("A Fan Project", True, (255, 255, 255))
+                self.screen.blit(credits_text, (
+                    self.screen_width // 2 - credits_text.get_width() // 2,
+                    self.screen_height // 2 - 40
+                ))
+                self.screen.blit(credit_line2, (
+                    self.screen_width // 2 - credit_line2.get_width() // 2,
+                    self.screen_height // 2 + 20
+                ))
 
-                # A way to escape the credits. Because sometimes, you just want to get back to the game.
                 keys = pygame.key.get_pressed()
                 if keys[pygame.K_ESCAPE] or keys[pygame.K_SPACE] or keys[pygame.K_RETURN]:
                     self.menu.state = MenuState.MAIN
 
-            pygame.display.flip()  # Flip that display buffer like a pancake
-            self.clock.tick(60)  # 60 FPS. Smooth like butter.
+            pygame.display.flip()
+            self.clock.tick(60)
 
-        pygame.quit()  # Pygame says goodbye
-
-
-# ------------------------ ENTRY POINT ------------------------
+        pygame.quit()
 
 if __name__ == "__main__":
     game = Game()
     game.run()
-    ##
-    ## [c] [ Team Flames 199X-20XX]
